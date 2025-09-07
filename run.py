@@ -6,6 +6,9 @@ import os
 from typing import List
 
 import numpy as np
+import json
+from datetime import datetime
+import shutil
 
 from finvision.cli import load_config
 from finvision.data.synthetic import make_synthetic_ohlcv
@@ -48,6 +51,15 @@ def main():
     else:
         print("[llm] Skipping LLM news signal build per flag")
 
+    # Prepare results directory
+    run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+    results_dir = os.path.join("results", run_id)
+    os.makedirs(results_dir, exist_ok=True)
+    try:
+        shutil.copy(args.config, os.path.join(results_dir, "config.yaml"))
+    except Exception:
+        pass
+
     # 4) Backtest (prediction metrics)
     pred_metrics = run_walk_forward(exp)
     print("[backtest] Prediction metrics (avg across splits):")
@@ -79,8 +91,35 @@ def main():
             print(f"  - {k}: {v:.6f}")
     except Exception as e:
         print(f"[rl] Skipped due to error: {e}")
+        rl_metrics = {"error": str(e)}
+
+    # 7) Persist results
+    summary = {
+        "config": os.path.abspath(args.config),
+        "run_id": run_id,
+        "backtest_metrics": pred_metrics,
+        "trade_prediction_metrics": metrics,
+        "trade_strategy_metrics": {
+            "sharpe": float(sharpe_ratio(rets.values)),
+            "max_drawdown": float(max_drawdown(rets.values)),
+            "cumulative_return": float(cumulative_return(rets.values)),
+        },
+        "rl_metrics": rl_metrics,
+    }
+    with open(os.path.join(results_dir, "summary.json"), "w") as f:
+        json.dump(summary, f, indent=2)
+    # Save predictions and returns
+    try:
+        df.to_csv(os.path.join(results_dir, "predictions.csv"))
+    except Exception:
+        pass
+    try:
+        rets.to_frame(name="return").to_csv(os.path.join(results_dir, "strategy_returns.csv"))
+    except Exception:
+        pass
+
+    print(f"[results] Saved to {results_dir}")
 
 
 if __name__ == "__main__":
     main()
-

@@ -64,6 +64,14 @@ Step‑by‑Step Usage
 - `python -m finvision.cli rl --config configs/example.yaml`
 - Trains a REINFORCE agent on the final split (train+val), evaluates on test.
 
+7) Cross-sectional evaluation (optional)
+- `python -m finvision.cli xsect --config configs/example.yaml`
+- Reports cross-sectional metrics including rank-IC and long-short Sharpe across tickers.
+
+8) PPO RL across multiple splits (optional)
+- `python -m finvision.cli rl-ppo --config configs/example.yaml`
+- Trains PPO on each rolling split (train+val), evaluates on test, and averages metrics.
+
 One‑shot end‑to‑end run
 - Ensure `OPENAI_API_KEY` is exported.
 - `python run.py --config configs/example.yaml`
@@ -166,3 +174,13 @@ Troubleshooting
 
 Note: This is a clean-room implementation aligned with the paper’s theme (multi-agent stock prediction). It is designed to be extendable to the paper’s specific architectures and protocols once details are provided.
 LLM integration uses GPT‑4o for article‑level scoring and aggregates per‑day per‑ticker signals; ensure `OPENAI_API_KEY` is set. Historical news availability via Yahoo/yfinance can be limited; consider alternative feeds for fuller replication.
+
+Leakage controls and horizons
+- News session bucketing: Articles are assigned to the session date whose US/Eastern market close (16:00) follows their publish time, preventing look‑ahead.
+- Prediction horizons: Targets default to t+1; adjust `data.horizon` for longer horizons.
+
+Cross‑sectional portfolios
+- Long‑short backtest supports equal‑weight top/bottom quantiles, holding period (default 5 days), weight caps, and turnover‑based costs (bps).
+
+Ensemble allocation
+- In addition to ridge/MLP, a constrained aggregator enforces non‑negative weights that sum to 1; set `aggregator: {type: constrained, nonneg: true, sum_to_one: true}`.
