@@ -8,9 +8,10 @@ from ..data.dataset import load_ohlcv_csvs, make_panel, sliding_windows
 from ..metrics import sharpe_ratio, max_drawdown, cumulative_return
 from .env import TradingEnv
 from .agent_pg import PolicyGradientAgent
+from .agent_ppo import PPOAgent
 
 
-def run_rl(cfg: ExperimentConfig) -> Dict[str, float]:
+def _make_env_series(cfg: ExperimentConfig):
     frames = load_ohlcv_csvs(cfg.data.data_dir, cfg.data.tickers, cfg.backtest.start, cfg.backtest.end)
     Xdf, yser = make_panel(
         frames,
@@ -20,12 +21,16 @@ def run_rl(cfg: ExperimentConfig) -> Dict[str, float]:
         use_returns=cfg.data.use_returns,
     )
     Xw, yw, idx = sliding_windows(Xdf, yser, cfg.data.lookback)
+    return Xw, yw
+
+
+def run_rl(cfg: ExperimentConfig) -> Dict[str, float]:
+    Xw, yw = _make_env_series(cfg)
     n = len(Xw)
     spans = cfg.backtest.train_span + cfg.backtest.val_span + cfg.backtest.test_span
     if n < spans:
         raise ValueError("Not enough data for RL split; reduce spans or lookback")
 
-    # Use the last available split for RL training and testing
     start = (n - spans)
     tr0 = start
     tr1 = start + cfg.backtest.train_span + cfg.backtest.val_span
@@ -70,3 +75,47 @@ def run_rl(cfg: ExperimentConfig) -> Dict[str, float]:
     }
     return metrics
 
+
+def run_rl_ppo(cfg: ExperimentConfig) -> Dict[str, float]:
+    Xw, yw = _make_env_series(cfg)
+    n = len(Xw)
+    spans = cfg.backtest.train_span + cfg.backtest.val_span + cfg.backtest.test_span
+    results = []
+    for start in range(0, n - spans + 1, cfg.backtest.test_span):
+        tr0 = start
+        tr1 = start + cfg.backtest.train_span + cfg.backtest.val_span
+        te0 = tr1
+        te1 = tr1 + cfg.backtest.test_span
+        Xtr, ytr = Xw[tr0:tr1], yw[tr0:tr1]
+        Xte, yte = Xw[te0:te1], yw[te0:te1]
+        if cfg.data.use_returns:
+            ytr = np.expm1(ytr)
+            yte = np.expm1(yte)
+        obs_dim = Xtr.shape[1] * Xtr.shape[2]
+        agent = PPOAgent(obs_dim=obs_dim, hidden=128, device="cpu")
+        env_train = TradingEnv(Xtr, ytr, cost_bps=cfg.cost_bps)
+        env_test = TradingEnv(Xte, yte, cost_bps=cfg.cost_bps)
+        agent.fit(env_train, epochs=10)
+
+        obs = env_test.reset()
+        rets = []
+        done = False
+        import torch
+        with torch.no_grad():
+            while not done:
+                x = torch.from_numpy(obs).float().unsqueeze(0)
+                logits = agent.policy()(x)
+                a = torch.argmax(torch.softmax(logits, dim=-1), dim=-1).item()
+                obs, r, done, _ = env_test.step(a)
+                rets.append(r)
+        rets = np.array(rets, dtype=np.float32)
+        results.append({
+            "sharpe": sharpe_ratio(rets),
+            "max_drawdown": max_drawdown(rets),
+            "cumulative_return": cumulative_return(rets),
+        })
+    # Average across splits
+    if not results:
+        return {"sharpe": float("nan"), "max_drawdown": float("nan"), "cumulative_return": float("nan")}
+    keys = results[0].keys()
+    return {k: float(np.mean([r[k] for r in results])) for k in keys}
