@@ -15,7 +15,7 @@ from .metrics import mse, mae, directional_accuracy
 from .agents.lstm import LSTMRegressor
 from .agents.mlp import MLPRegressor
 from .agents.llm_news import LLMNewsRegressor
-from .ensemble.aggregators import RidgeAggregator, MLPAggregator
+from .ensemble.aggregators import RidgeAggregator, MLPAggregator, ConstrainedAggregator
 from .news.signal import load_llm_mean_series
 
 
@@ -63,6 +63,8 @@ def _build_aggregator(agg_cfg):
         return RidgeAggregator(alpha=agg_cfg.alpha)
     elif agg_cfg.type == "mlp":
         return MLPAggregator(hidden_size=agg_cfg.hidden_size, lr=agg_cfg.lr, epochs=agg_cfg.epochs)
+    elif agg_cfg.type == "constrained":
+        return ConstrainedAggregator(lr=agg_cfg.lr, steps=200, nonneg=agg_cfg.nonneg, sum_to_one=agg_cfg.sum_to_one)
     else:
         raise ValueError(f"Unknown aggregator type: {agg_cfg.type}")
 

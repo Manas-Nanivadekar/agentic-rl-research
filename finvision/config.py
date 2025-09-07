@@ -34,6 +34,9 @@ class AggregatorConfig:
     lr: float = 1e-3
     epochs: int = 10
     batch_size: int = 256
+    # constraints for constrained aggregator
+    nonneg: bool = True
+    sum_to_one: bool = True
 
 
 @dataclass
