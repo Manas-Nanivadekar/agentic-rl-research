@@ -55,3 +55,29 @@ class ExperimentConfig:
     # trading settings
     threshold: float = 0.0  # prediction threshold for entering positions
     cost_bps: float = 1.0   # round-trip cost in basis points applied on turnover
+
+
+# Optional LLM and news configuration (used by the LLM agent and news CLI)
+@dataclass
+class NewsConfig:
+    provider: str = "yahoo"  # currently supports 'yahoo'
+    cache_dir: str = "data/news_cache"
+    max_articles_per_day: int = 25
+    start: Optional[str] = None
+    end: Optional[str] = None
+
+
+@dataclass
+class LLMConfig:
+    provider: str = "openai"
+    model: str = "gpt-4o"
+    prompt_name: str = "default"
+    cache_dir: str = "data/llm_cache"
+    max_retries: int = 3
+    timeout_s: int = 60
+
+
+@dataclass
+class ExtendedExperimentConfig(ExperimentConfig):
+    news: NewsConfig = field(default_factory=NewsConfig)
+    llm: LLMConfig = field(default_factory=LLMConfig)

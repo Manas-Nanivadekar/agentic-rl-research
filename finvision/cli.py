@@ -10,6 +10,9 @@ from .config import (
     AgentConfig,
     AggregatorConfig,
     BacktestConfig,
+    ExtendedExperimentConfig,
+    NewsConfig,
+    LLMConfig,
 )
 from .backtest import run_walk_forward, run_walk_forward_with_preds
 from .metrics import sharpe_ratio, max_drawdown, cumulative_return
@@ -17,6 +20,13 @@ from .portfolio import positions_from_predictions, strategy_returns
 from .data.download import download_stooq_daily
 from .rl.pipeline import run_rl
 from .data.synthetic import make_synthetic_ohlcv
+from .news.signal import build_llm_news_signal
+
+
+def cmd_news(args):
+    exp = load_config(args.config)
+    out = build_llm_news_signal(exp, out_path=args.out)
+    print(f"Wrote LLM daily signal: {out}")
 
 
 def load_config(path: str) -> ExperimentConfig:
@@ -28,12 +38,15 @@ def load_config(path: str) -> ExperimentConfig:
     agg = cfg.get("aggregator", {})
     bt = cfg.get("backtest", {})
 
-    exp = ExperimentConfig(
+    # Backward compatible: allow extended fields but return base ExperimentConfig-compatible object
+    exp = ExtendedExperimentConfig(
         seed=cfg.get("seed", 42),
         data=DataConfig(**data),
         agents=[AgentConfig(**a) for a in agents],
         aggregator=AggregatorConfig(**agg),
         backtest=BacktestConfig(**bt),
+        news=NewsConfig(**cfg.get("news", {})),
+        llm=LLMConfig(**cfg.get("llm", {})),
     )
     return exp
 
@@ -77,6 +90,11 @@ def main():
     sy.add_argument("--seed", type=int, default=42)
     sy.add_argument("--outdir", default="data")
     sy.set_defaults(func=cmd_make_synth)
+
+    nw = sub.add_parser("news", help="Fetch news, score with GPT-4o, and build daily LLM signal")
+    nw.add_argument("--config", required=True, help="Path to YAML config")
+    nw.add_argument("--out", default="data/features/llm_signal.csv", help="Output CSV for daily signal")
+    nw.set_defaults(func=cmd_news)
 
     args = parser.parse_args()
     if not hasattr(args, "func"):

@@ -14,7 +14,9 @@ from .data.dataset import TimeSeriesDataset, sliding_windows
 from .metrics import mse, mae, directional_accuracy
 from .agents.lstm import LSTMRegressor
 from .agents.mlp import MLPRegressor
+from .agents.llm_news import LLMNewsRegressor
 from .ensemble.aggregators import RidgeAggregator, MLPAggregator
+from .news.signal import load_llm_mean_series
 
 
 def _build_agent(cfg: AgentConfig, input_size: int, lookback: int):
@@ -34,6 +36,17 @@ def _build_agent(cfg: AgentConfig, input_size: int, lookback: int):
         return MLPRegressor(
             name=cfg.name,
             input_dim=input_size * lookback,
+            hidden_size=cfg.hidden_size,
+            dropout=cfg.dropout,
+            device=cfg.device,
+            lr=cfg.lr,
+            epochs=cfg.epochs,
+            batch_size=cfg.batch_size,
+        )
+    elif cfg.type.lower() == "llm_news":
+        return LLMNewsRegressor(
+            name=cfg.name,
+            lookback=lookback,
             hidden_size=cfg.hidden_size,
             dropout=cfg.dropout,
             device=cfg.device,
@@ -74,6 +87,19 @@ def run_walk_forward(cfg: ExperimentConfig) -> Dict[str, float]:
     Xw, yw, idx = sliding_windows(Xdf, yser, cfg.data.lookback)
     n = len(Xw)
     f = Xw.shape[-1]
+    # Build LLM windows; default to neutral zeros so pipeline runs even without news
+    Xw_llm = np.zeros((n, cfg.data.lookback, 1), dtype=np.float32)
+    try:
+        llm_series = load_llm_mean_series()
+        llm_aligned = llm_series.reindex(Xdf.index).fillna(0.0).astype(np.float32)
+        vals = llm_aligned.values.astype(np.float32)
+        xs_llm = []
+        for i in range(cfg.data.lookback, len(vals)):
+            xs_llm.append(vals[i - cfg.data.lookback : i])
+        if xs_llm:
+            Xw_llm = np.stack(xs_llm)[:, :, None]  # [N, T, 1]
+    except Exception:
+        pass
 
     start = 0
     metrics = []
@@ -98,10 +124,15 @@ def run_walk_forward(cfg: ExperimentConfig) -> Dict[str, float]:
         # Train agents
         val_loaders = []
         test_loaders = []
-        for a in agents:
-            train_loader = _make_loaders(Xtr, ytr, a.batch_size)
-            val_loader = _make_loaders(Xva, yva, a.batch_size, shuffle=False)
-            test_loader = _make_loaders(Xte, yte, a.batch_size, shuffle=False)
+        for a, acfg in zip(agents, cfg.agents):
+            if acfg.type.lower() == "llm_news":
+                Xtr_in, Xva_in, Xte_in = Xw_llm[tr0:tr1], Xw_llm[va0:va1], Xw_llm[te0:te1]
+            else:
+                Xtr_in, Xva_in, Xte_in = Xtr, Xva, Xte
+
+            train_loader = _make_loaders(Xtr_in, ytr, a.batch_size)
+            val_loader = _make_loaders(Xva_in, yva, a.batch_size, shuffle=False)
+            test_loader = _make_loaders(Xte_in, yte, a.batch_size, shuffle=False)
             a.fit(train_loader, val_loader)
             val_loaders.append(val_loader)
             test_loaders.append(test_loader)
@@ -158,6 +189,19 @@ def run_walk_forward_with_preds(cfg: ExperimentConfig) -> Tuple[Dict[str, float]
     Xw, yw, idx = sliding_windows(Xdf, yser, cfg.data.lookback)
     n = len(Xw)
     f = Xw.shape[-1]
+    # Build LLM windows; default to neutral zeros
+    Xw_llm = np.zeros((n, cfg.data.lookback, 1), dtype=np.float32)
+    try:
+        llm_series = load_llm_mean_series()
+        llm_aligned = llm_series.reindex(Xdf.index).fillna(0.0).astype(np.float32)
+        vals = llm_aligned.values.astype(np.float32)
+        xs_llm = []
+        for i in range(cfg.data.lookback, len(vals)):
+            xs_llm.append(vals[i - cfg.data.lookback : i])
+        if xs_llm:
+            Xw_llm = np.stack(xs_llm)[:, :, None]
+    except Exception:
+        pass
 
     rows = []
     metrics = []
@@ -181,10 +225,15 @@ def run_walk_forward_with_preds(cfg: ExperimentConfig) -> Tuple[Dict[str, float]
         ]
         val_loaders = []
         test_loaders = []
-        for a in agents:
-            train_loader = _make_loaders(Xtr, ytr, a.batch_size)
-            val_loader = _make_loaders(Xva, yva, a.batch_size, shuffle=False)
-            test_loader = _make_loaders(Xte, yte, a.batch_size, shuffle=False)
+        for a, acfg in zip(agents, cfg.agents):
+            if acfg.type.lower() == "llm_news":
+                Xtr_in, Xva_in, Xte_in = Xw_llm[tr0:tr1], Xw_llm[va0:va1], Xw_llm[te0:te1]
+            else:
+                Xtr_in, Xva_in, Xte_in = Xtr, Xva, Xte
+
+            train_loader = _make_loaders(Xtr_in, ytr, a.batch_size)
+            val_loader = _make_loaders(Xva_in, yva, a.batch_size, shuffle=False)
+            test_loader = _make_loaders(Xte_in, yte, a.batch_size, shuffle=False)
             a.fit(train_loader, val_loader)
             val_loaders.append(val_loader)
             test_loaders.append(test_loader)
