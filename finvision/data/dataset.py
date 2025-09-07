@@ -75,6 +75,29 @@ def make_panel(
     return X, y
 
 
+def make_single_panel(
+    df: pd.DataFrame,
+    features: Optional[List[str]] = None,
+    target: str = "close",
+    horizon: int = 1,
+    use_returns: bool = True,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Build features and target for a single ticker DataFrame.
+
+    Returns X (features) and y (target) aligned, dropping NaNs from horizon shift.
+    """
+    fdf = df[features] if features else _default_features(df)
+    base = df[target]
+    if use_returns:
+        y = np.log(base.shift(-horizon) / base)
+    else:
+        y = base.shift(-horizon)
+    mask = y.notna()
+    X = fdf.loc[mask].copy()
+    y = y.loc[mask].copy()
+    return X, y
+
+
 def sliding_windows(X: pd.DataFrame, y: pd.Series, lookback: int) -> Tuple[np.ndarray, np.ndarray, List[pd.Timestamp]]:
     values = X.values.astype(np.float32)
     target = y.values.astype(np.float32)
