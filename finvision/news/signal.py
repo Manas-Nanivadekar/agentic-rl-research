@@ -12,20 +12,37 @@ import pandas as pd
 from ..config import ExtendedExperimentConfig
 from .fetch_yahoo import fetch_yahoo_news
 from ..llm.openai_scorer import GPT4oScorer, score_article_to_json
+from zoneinfo import ZoneInfo
 
 
 def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
-def _articles_to_daily_scores(arts: List[dict], max_per_day: int = 25) -> pd.DataFrame:
+def _session_date(ts_utc: pd.Timestamp, cutoff_hour: int = 16) -> pd.Timestamp:
+    """Map UTC timestamp to US/Eastern session date: assigns to the date whose market close follows ts.
+
+    Example: if ts is after 16:00 ET, bucket to next session date to avoid look-ahead leakage.
+    """
+    eastern = ZoneInfo("America/New_York")
+    local = ts_utc.tz_convert(eastern)
+    cutoff = local.replace(hour=cutoff_hour, minute=0, second=0, microsecond=0)
+    if local <= cutoff:
+        session = local.date()
+    else:
+        session = (local + pd.Timedelta(days=1)).date()
+    # return normalized UTC midnight of session date for indexing consistency
+    return pd.Timestamp(session).tz_localize(eastern).tz_convert("UTC").normalize()
+
+
+def _articles_to_daily_scores(arts: List[dict], max_per_day: int = 25, cutoff_hour: int = 16) -> pd.DataFrame:
     rows: List[Tuple[pd.Timestamp, float, float, str]] = []
     # Sort by time to keep first N if needed
     arts_sorted = sorted(arts, key=lambda a: a.get("published_at", ""))
     counts: Dict[str, int] = defaultdict(int)
     for a in arts_sorted:
-        ts = pd.to_datetime(a.get("published_at"))
-        day = ts.normalize()
+        ts = pd.to_datetime(a.get("published_at")).tz_convert("UTC")
+        day = _session_date(ts, cutoff_hour=cutoff_hour)
         key = f"{a.get('ticker','')}-{day.date()}"
         if counts[key] >= max_per_day:
             continue
@@ -75,7 +92,7 @@ def build_llm_news_signal(cfg: ExtendedExperimentConfig, out_path: str = "data/f
             all_scored.append(j)
 
     # Build daily confidence-weighted signal per ticker
-    daily_df = _articles_to_daily_scores(all_scored, max_per_day=cfg.news.max_articles_per_day)
+    daily_df = _articles_to_daily_scores(all_scored, max_per_day=cfg.news.max_articles_per_day, cutoff_hour=16)
     agg_df = _aggregate_daily(daily_df)
     if agg_df.empty:
         # write empty stub
@@ -103,4 +120,3 @@ def load_llm_mean_series(features_dir: str = "data/features", fname: str = "llm_
         # if not present, compute
         df["LLM_MEAN"] = df.mean(axis=1)
     return df["LLM_MEAN"].astype(float)
-
