@@ -1,0 +1,43 @@
+seed: 42
+data:
+  data_dir: data
+  tickers: [SYNTH]
+  target: close
+  horizon: 1
+  use_returns: true
+  lookback: 30
+  # features: [open, high, low, close, volume]
+
+agents:
+  - name: lstm_64
+    type: lstm
+    hidden_size: 64
+    num_layers: 1
+    dropout: 0.1
+    lr: 0.001
+    epochs: 5
+    batch_size: 128
+    device: cpu
+  - name: mlp_128
+    type: mlp
+    hidden_size: 128
+    dropout: 0.1
+    lr: 0.001
+    epochs: 5
+    batch_size: 128
+    device: cpu
+
+aggregator:
+  type: ridge  # ridge | mlp
+  alpha: 1.0
+
+backtest:
+  start: null
+  end: null
+  train_span: 252
+  val_span: 63
+  test_span: 63
+
+# trading settings
+threshold: 0.0   # enter long if pred > thr; short if pred < -thr
+cost_bps: 1.0    # cost in basis points per unit turnover
