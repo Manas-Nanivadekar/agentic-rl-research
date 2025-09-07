@@ -1,0 +1,24 @@
+{
+  "config": "/Users/manasnanivadekar/Projects/agentic-rl-research/configs/example.yaml",
+  "run_id": "20250907-183313",
+  "backtest_metrics": {
+    "mse": 0.00017430371120169113,
+    "mae": 0.010493731842591213,
+    "directional_acc": 0.479242993088869
+  },
+  "trade_prediction_metrics": {
+    "mse": 0.00017430371120169113,
+    "mae": 0.010493731842591213,
+    "directional_acc": 0.479242993088869
+  },
+  "trade_strategy_metrics": {
+    "sharpe": -0.7534403171364981,
+    "max_drawdown": -0.777079212331824,
+    "cumulative_return": -0.6763188787715169
+  },
+  "rl_metrics": {
+    "sharpe": 4.263444583970275,
+    "max_drawdown": -0.03823179006576538,
+    "cumulative_return": 0.19087469577789307
+  }
+}
